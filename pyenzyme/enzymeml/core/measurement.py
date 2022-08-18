@@ -16,6 +16,7 @@ from pyenzyme.enzymeml.core.enzymemlbase import EnzymeMLBase
 from pyenzyme.enzymeml.core.measurementData import MeasurementData
 from pyenzyme.enzymeml.core.replicate import Replicate
 from pyenzyme.enzymeml.core.exceptions import SpeciesNotFoundError
+from pyenzyme.enzymeml.core.stocksolution import StockSolution
 from pyenzyme.utils.log import log_object
 from pyenzyme.enzymeml.core.utils import type_checking, deprecated_getter
 
@@ -55,6 +56,7 @@ class Measurement(EnzymeMLBase):
         inclusiveMaximum=14,
     )
 
+    # Concentrations of the species need to be calculated based on stock solutions
     species_dict: Dict[str, Dict[str, MeasurementData]] = Field(
         {"proteins": {}, "reactants": {}},
         description="Species of the measurement.",

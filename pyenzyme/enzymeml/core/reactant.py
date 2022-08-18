@@ -40,7 +40,7 @@ class Reactant(EnzymeMLBase, AbstractSpecies):
 
     unit: Optional[str] = Field(
         None,
-        description="Unit of the reactant intial concentration.",
+        description="Unit of the reactants intial concentration.",
     )
 
     constant: bool = Field(
@@ -96,6 +96,16 @@ class Reactant(EnzymeMLBase, AbstractSpecies):
     chebi_id: Optional[str] = Field(
         None,
         description="Unique identifier of the CHEBI database. Use this identifier to initialize the object from the CHEBI database.",
+    )
+
+    molar_mass: Optional[float] = Field(
+        None,
+        description="Average molar mass of the reactant."
+    )
+
+    density: Optional[float] = Field(
+        None,
+        description="Density of the reactant."
     )
 
     # ! Initializers

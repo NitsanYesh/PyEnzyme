@@ -24,6 +24,7 @@ from pyenzyme.enzymeml.core.enzymemlbase import EnzymeMLBase
 from pyenzyme.enzymeml.core.abstract_classes import AbstractSpecies
 
 from pyenzyme.enzymeml.core.reactant import Reactant
+from pyenzyme.enzymeml.core.stocksolution import StockSolution
 from pyenzyme.enzymeml.core.creator import Creator
 from pyenzyme.enzymeml.core.protein import Protein
 from pyenzyme.enzymeml.core.complex import Complex
@@ -126,6 +127,12 @@ class EnzymeMLDocument(EnzymeMLBase):
         alias="reactants",
         default_factory=dict,
         description="Dictionary mapping from reactant IDs to reactant describing objects.",
+    )
+
+    stocksolution_dict: Dict[str, StockSolution] = Field(
+        alias="stock_solution",
+        default_factory=dict,
+        description="Dictionary mapping from stock solution IDs to stock solution describing objects"
     )
 
     reaction_dict: Dict[str, EnzymeReaction] = Field(
