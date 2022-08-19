@@ -1,6 +1,8 @@
 from pydantic import Field, BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 
+from pyenzyme.enzymeml.core.abstract_classes import AbstractSpecies
+from pyenzyme.enzymeml.core.reactant import Reactant
 from pyenzyme.enzymeml.core.enzymemlbase import EnzymeMLBase
 
 # We can design this in different ways:
@@ -54,19 +56,104 @@ class StockSolution(EnzymeMLBase):
         template_alias="Vessel",
     )
 
-    components: List[StockSolutionElement] = Field(
+    components_dict: Dict[str, StockSolutionElement] = Field(
         default_factory=list,
         description="List of reactants containing StockSolutionElement objects."
     )
 
-
     def addComponent(
         self,
         species_id: str,
+        mass: Optional[float] = None,
+        mass_unit: Optional[str] = None,
+        volume: Optional[float] = None,
+        volume_unit: Optional[str] = None,
     ) -> None:
-        pass
+
+        self.components_dict[species_id] = StockSolutionElement(
+            species_id=species_id,
+            mass=mass,
+            mass_unit=mass_unit,
+            volume=volume,
+            volume_unit=volume_unit
+        )
 
 
-    @classmethod
-    def getConcentration(self):
-        pass
+
+    def getConcentrations(self, reactant_dict: Dict[str, Reactant]) -> Dict[str, float]:
+
+        concentration_in_stock_solution_dict = dict()
+        total_volume = self._getTotalVolume()
+
+        for reactant_id, reactant in self.components_dict.items():
+            
+            # Check if all species have molar mass
+            if reactant_dict[reactant_id].molar_mass is not None:
+                molar_mass = reactant_dict[reactant_id].molar_mass
+            else:
+                raise TypeError(f"No molar mass specified for species {reactant_id}.")
+
+            # Calaculate concentration in stock solution of dissolved solids
+            if not self.components_dict[reactant_id].mass == None:
+
+                mols = reactant.mass / molar_mass
+                concentration = mols / total_volume
+                concentration_in_stock_solution_dict[reactant_id] = concentration
+            
+            # Calculate concentration of fluids
+            if not self.components_dict[reactant_id].volume == None:
+
+                # Check if density is provided for all fluids
+                if reactant_dict[reactant_id].density is not None:
+                    density = reactant_dict[reactant_id].density
+                else:
+                    raise TypeError(f"No density specified for species {reactant_id}.")
+
+                volumetric_molarity = molar_mass / density # l / mol
+                mols = reactant.volume / volumetric_molarity
+                concentration = mols / total_volume
+                concentration_in_stock_solution_dict[reactant_id] = concentration
+
+
+
+
+        return concentration_in_stock_solution_dict
+
+    def _getTotalVolume(self) -> float:
+        """Calculate total volume of stock solution"""
+
+        total_volume = 0.0
+        for component in self.components_dict.values():
+            if component.volume != None:
+                total_volume += component.volume
+
+        return total_volume
+
+
+
+
+
+if __name__ == "__main__":
+    from pyenzyme.enzymeml.core.reactant import Reactant
+
+    reactant_dict = {}
+
+    # Fluid components (water and methanol)
+    reactant_dict["s0"] = Reactant.fromChebiID(15377, "v0")
+    reactant_dict["s0"].density = 997
+
+    reactant_dict["s1"] = Reactant.fromChebiID(17790, "v0")
+    reactant_dict["s1"].density = 792
+    
+    # Solid components
+    reactant_dict["s2"] = Reactant.fromChebiID(27732, "v0")
+
+
+    stocksolution = StockSolution(name="Substrate stock")
+    
+    stocksolution.addComponent("s0", volume=0.005, volume_unit="l")
+    stocksolution.addComponent("s1", volume=0.0001, volume_unit="l")
+    stocksolution.addComponent("s2", mass=0.005, mass_unit="g")
+
+    print(stocksolution.getConcentrations(reactant_dict))
+
