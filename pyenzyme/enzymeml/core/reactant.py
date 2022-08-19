@@ -163,6 +163,7 @@ class Reactant(EnzymeMLBase, AbstractSpecies):
             prefix + "inchi": "inchi",
             prefix + "smiles": "smiles",
             prefix + "chebiAsciiName": "name",
+            prefix + "mass": "molar_mass"
         }
 
         # Collect parameters
@@ -219,3 +220,11 @@ class Reactant(EnzymeMLBase, AbstractSpecies):
     @deprecated_getter("constant")
     def getConstant(self):
         return self.constant
+
+
+if __name__ == "__main__":
+
+    reactant = Reactant.fromChebiID(16236, vessel_id="v0")
+
+    #reactant = Reactant._getChEBIParameters(16236)
+    print(reactant)
