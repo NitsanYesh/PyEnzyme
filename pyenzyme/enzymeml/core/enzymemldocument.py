@@ -254,6 +254,10 @@ class EnzymeMLDocument(EnzymeMLBase):
         for reactant in enzmldoc.reactant_dict.values():
             nu_enzmldoc.addReactant(reactant)
 
+        # StockSolution
+        for solution in enzmldoc.stocksolution_dict.values():
+            nu_enzmldoc
+
         # Complexes
         for complex in enzmldoc.complex_dict.values():
             nu_enzmldoc._add_complex(complex)

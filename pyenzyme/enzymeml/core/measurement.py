@@ -333,6 +333,61 @@ class Measurement(EnzymeMLBase):
                 f"Added {type(measData).__name__} '{measData.get_id()}' to measurement '{self.name}'"
             )
 
+    def fromStockSolutions(
+        self,
+        stocksolution_dict: Dict[str, StockSolution],
+        all_dict: dict,
+        components: Dict[str, float], # id of stock solution, volume applied to reaction vessel
+    ) -> None:
+
+        #check identity of "stocksolution_dict" and "component" keys()
+
+        if stocksolution_dict.keys() == components.keys():
+            pass
+        else:
+            raise ValueError(
+                "Stocksolution_dict and componets need to contain identical keys"
+            )
+
+        # calculate total volume
+        total_volume = sum(components.values())
+
+        unit = "NOT WORKING" # TODO: needs to be assessed somehow in stocksolutions.py
+
+        # Get unique components within all stocksolutions
+        unique_components: str = []
+        for stocksolution in stocksolution_dict.values():
+            for component in stocksolution.components:
+                if component.species_id not in unique_components:
+                    unique_components.append(component.species_id)
+
+        for species in unique_components:
+            mass_of_species = 0.0
+            for stocksolution_id, stocksolution in stocksolution_dict.items():
+                concentration_in_stock_solution_dict = stocksolution.getConcentrations(all_dict)
+
+                if species in concentration_in_stock_solution_dict.keys():
+                    mass_of_species += concentration_in_stock_solution_dict[species] * components[stocksolution_id]
+
+            init_conc = mass_of_species / total_volume
+
+            if species.startswith("s"):
+                species_id = species
+                protein_id = None
+
+            if species.startswith("p"):
+                protein_id = species
+                species_id = None
+
+            self.addData(
+                unit=unit,
+                init_conc=init_conc,
+                reactant_id=species_id,
+                protein_id=protein_id,
+                replicates=[],
+                log=True
+                )
+
     def updateReplicates(self, replicates: List[Replicate]) -> None:
         for replicate in replicates:
             # Set the measurement name for the replicate

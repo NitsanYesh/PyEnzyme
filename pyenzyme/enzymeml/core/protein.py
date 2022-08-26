@@ -114,11 +114,11 @@ class Protein(EnzymeMLBase, AbstractSpecies):
         template_alias="UniProt ID",
     )
 
-    molecular_weight: Optional[str] = Field(
+    molar_mass: Optional[float] = Field(
         None,
-        description="Molecular weight of the protein (Dalton).",
+        description="Molar mass of the protein (Dalton).",
         )
-        
+
     # ! Validators
     @validator("id")
     def set_meta_id(cls, id: Optional[str], values: dict):

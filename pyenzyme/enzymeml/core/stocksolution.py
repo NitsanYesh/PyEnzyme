@@ -4,14 +4,7 @@ from typing import Optional, List, Dict
 from pyenzyme.enzymeml.core.abstract_classes import AbstractSpecies
 from pyenzyme.enzymeml.core.reactant import Reactant
 from pyenzyme.enzymeml.core.enzymemlbase import EnzymeMLBase
-
-# We can design this in different ways:
-# Eighter calculated data is provided in the form of concentrations 
-# (e.g. the stock solution consisted of 0.1 mol/l s0 and 50 mmol/l s1),
-#
-# or we document "labratory raw-data". Then pyenzyme calculates the concentration based on mass, molar_mass (, and density).
-# (e.g. 30 mg of s1 were solved in 5 mL of s0) is provided in the form
-
+from pyenzyme.enzymeml.core.exceptions import SpeciesNotFoundError
 
 
 class StockSolutionElement(BaseModel):
@@ -47,7 +40,13 @@ class StockSolutionElement(BaseModel):
 class StockSolution(EnzymeMLBase):
 
     name: Optional[str] = Field(
-        None, description="Name of the stock solution."
+        None,
+        description="Name of the stock solution."
+    )
+
+    id: Optional[str] = Field(
+        None,
+        description="Unique identifier of the stock solution."
     )
 
     # I guess vessel can be optional, since it only serves as a temporary container.
@@ -56,9 +55,14 @@ class StockSolution(EnzymeMLBase):
         template_alias="Vessel",
     )
 
-    components_dict: Dict[str, StockSolutionElement] = Field(
+    components: List[StockSolutionElement] = Field(
         default_factory=list,
         description="List of reactants containing StockSolutionElement objects."
+    )
+
+    concentration_dict: Dict[str, float] = Field(
+        None,
+        description="Calculated concentrations of each component within the stock solution."
     )
 
     def addComponent(
@@ -70,64 +74,88 @@ class StockSolution(EnzymeMLBase):
         volume_unit: Optional[str] = None,
     ) -> None:
 
-        self.components_dict[species_id] = StockSolutionElement(
+        self.components.append(StockSolutionElement(
             species_id=species_id,
             mass=mass,
             mass_unit=mass_unit,
             volume=volume,
             volume_unit=volume_unit
-        )
+        ))
 
+    def getConcentrations(self, all_dict: Dict[str, Reactant]) -> Dict[str, float]:
+        """ Calculates molar concentration of each component within the stock solution.
+        
+        Args:
+            all_dict (dict): dict, all enzymeML dicts.
 
+        Returns:
+             concentration_in_stock_solution_dict (dict): reaction_id: molar concentration pairs.
+        """
 
-    def getConcentrations(self, reactant_dict: Dict[str, Reactant]) -> Dict[str, float]:
+        # TODO handling of units
+        # TODO dict.value should store aoncentration as well as the respective concentration
 
         concentration_in_stock_solution_dict = dict()
         total_volume = self._getTotalVolume()
 
-        for reactant_id, reactant in self.components_dict.items():
+        for species in self.components:
+            species_id = self._getSpecies(species.species_id).species_id
             
             # Check if all species have molar mass
-            if reactant_dict[reactant_id].molar_mass is not None:
-                molar_mass = reactant_dict[reactant_id].molar_mass
+            if all_dict[species_id].molar_mass is not None:
+                molar_mass = all_dict[species_id].molar_mass
             else:
-                raise TypeError(f"No molar mass specified for species {reactant_id}.")
+                raise ValueError(f"No molar mass specified for species {species_id}.")
 
             # Calaculate concentration in stock solution of dissolved solids
-            if not self.components_dict[reactant_id].mass == None:
+            if species.mass is not None:
 
-                mols = reactant.mass / molar_mass
+                mols = species.mass / molar_mass
                 concentration = mols / total_volume
-                concentration_in_stock_solution_dict[reactant_id] = concentration
+                concentration_in_stock_solution_dict[species_id] = concentration
             
             # Calculate concentration of fluids
-            if not self.components_dict[reactant_id].volume == None:
+            if species.volume is not None:
 
                 # Check if density is provided for all fluids
-                if reactant_dict[reactant_id].density is not None:
-                    density = reactant_dict[reactant_id].density
+                if all_dict[species_id].density is not None:
+                    density = all_dict[species_id].density
                 else:
-                    raise TypeError(f"No density specified for species {reactant_id}.")
+                    raise ValueError(f"No density specified for species {species_id}.")
 
                 volumetric_molarity = molar_mass / density # l / mol
-                mols = reactant.volume / volumetric_molarity
+                mols = species.volume / volumetric_molarity
                 concentration = mols / total_volume
-                concentration_in_stock_solution_dict[reactant_id] = concentration
-
-
-
+                concentration_in_stock_solution_dict[species_id] = concentration
 
         return concentration_in_stock_solution_dict
 
     def _getTotalVolume(self) -> float:
         """Calculate total volume of stock solution"""
 
-        total_volume = 0.0
-        for component in self.components_dict.values():
-            if component.volume != None:
+        total_volume = 0
+        for component in self.components:
+            if component.volume is not None:
                 total_volume += component.volume
 
         return total_volume
+
+
+    def _getSpecies(self, id: str) -> "StockSolutionElement":
+        try:
+            return next(filter(lambda element: element.species_id == id, self.components))
+        except StopIteration:
+            raise SpeciesNotFoundError(species_id=id, enzymeml_part="StockSolution")
+
+    @staticmethod 
+    def _calculate_concentration(
+        stock_solution: "StockSolution",
+        volume: float
+        ) -> float:
+        pass
+
+
+
 
 
 
@@ -135,25 +163,90 @@ class StockSolution(EnzymeMLBase):
 
 if __name__ == "__main__":
     from pyenzyme.enzymeml.core.reactant import Reactant
+    from pyenzyme.enzymeml.core.protein import Protein
+    from pyenzyme.enzymeml.core.measurement import Measurement
+
 
     reactant_dict = {}
+    enzyme_dict = {}
+    stocksolution_dict = {}
 
-    # Fluid components (water and methanol)
+    ###################
+    ## Fluid Species ##
+    ################### 
+      
+    # Water
     reactant_dict["s0"] = Reactant.fromChebiID(15377, "v0")
     reactant_dict["s0"].density = 997
 
-    reactant_dict["s1"] = Reactant.fromChebiID(17790, "v0")
-    reactant_dict["s1"].density = 792
+    # Ethanol
+    reactant_dict["s1"] = Reactant.fromChebiID(16236, "v0")
+    reactant_dict["s1"].density = 789
     
-    # Solid components
+
+    ###################
+    ## Solid Species ##
+    ###################
+
+    # Coffein
     reactant_dict["s2"] = Reactant.fromChebiID(27732, "v0")
 
+    # Tris
+    reactant_dict["s3"] = Reactant.fromChebiID(9754, "v0")
 
-    stocksolution = StockSolution(name="Substrate stock")
-    
-    stocksolution.addComponent("s0", volume=0.005, volume_unit="l")
-    stocksolution.addComponent("s1", volume=0.0001, volume_unit="l")
-    stocksolution.addComponent("s2", mass=0.005, mass_unit="g")
+    #############
+    ## Protein ##
+    #############
 
-    print(stocksolution.getConcentrations(reactant_dict))
+    enzyme_dict["p0"] = Protein.fromUniProtID("Q16678", "v0")
+    enzyme_dict["p0"].molar_mass = 60860
+
+
+    ###########################
+    ## Define StockSolutions ##
+    ###########################  
+
+    # Substrate stock
+    stocksolution_dict["sto0"] = StockSolution(name="Disco Mate")
+    stocksolution_dict["sto0"].addComponent("s0", volume=0.450, volume_unit="l")
+    stocksolution_dict["sto0"].addComponent("s1", volume=0.05, volume_unit="l")
+    stocksolution_dict["sto0"].addComponent("s2", mass=0.02, mass_unit="g")
+
+    # Tris-Buffer stock
+    stocksolution_dict["sto1"] = StockSolution(name="Hepes Buffer")
+    stocksolution_dict["sto1"].addComponent("s0", volume=1, volume_unit="l")
+    stocksolution_dict["sto1"].addComponent("s3", mass=12.12, mass_unit="g")
+
+    # Enzyme stock
+    stocksolution_dict["sto2"] = StockSolution(name="P450 stock")
+    stocksolution_dict["sto2"].addComponent("s0", volume=0.001, volume_unit="l")
+    stocksolution_dict["sto2"].addComponent("p0", mass=0.000008, mass_unit="g")
+
+
+    all_dicts = {
+        **reactant_dict,
+        **enzyme_dict,
+        **stocksolution_dict
+    }
+
+
+    #print(stocksolution._getSpecies("s1"))
+    #print(stocksolution._getTotalVolume())
+
+
+    #print(stocksolution_dict["sto2"].getConcentrations(all_dicts))
+
+    measurement = Measurement(name="yolo")
+
+    measurement.fromStockSolutions(
+        stocksolution_dict=stocksolution_dict,
+        all_dict=all_dicts,
+        components={
+            "sto0": 50,
+            "sto1": 50,
+            "sto2": 100
+        }
+    )
+
+    print(measurement)
 
