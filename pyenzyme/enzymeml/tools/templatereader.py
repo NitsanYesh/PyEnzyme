@@ -8,7 +8,9 @@ import numpy as np
 import pandas as pd
 import re
 
-from typing import List, Dict
+from typing import Any, List, Dict
+from math import isnan
+from collections import OrderedDict
 
 from pyenzyme.enzymeml.core.ontology import DataTypes
 from pyenzyme.enzymeml.core.creator import Creator
@@ -18,6 +20,194 @@ from pyenzyme.enzymeml.core.reactant import Reactant
 from pyenzyme.enzymeml.core.enzymereaction import EnzymeReaction
 from pyenzyme.enzymeml.core.measurement import Measurement
 from pyenzyme.enzymeml.core.replicate import Replicate
+
+
+def validate_inital_concentrations(path: str, enzymeml_reactant_dict: dict):
+
+    inital_conditions = []
+    reactant_names = []
+    for reactant_id in enzymeml_reactant_dict:
+        reactant_name = enzymeml_reactant_dict[reactant_id].name
+        reactant_names.append(reactant_name)
+
+        initial_concentrations = extract_initial_conditions(
+            path, reactant_name)
+        inital_conditions.append(initial_concentrations)
+
+    unique_keys = [key for d in inital_conditions for key in d.keys()]
+
+    for initial_condition, reactant_name in zip(inital_conditions, reactant_names):
+        for unique_key in unique_keys:
+            if unique_key not in initial_condition.keys():
+                raise KeyError(
+                    f"Initial concentration for {unique_key} not found for reactant {reactant_name}")
+
+
+def extract_initial_conditions(path: str, sheet_name: str) -> OrderedDict[str, float]:
+    """Extracts initial concentration values for each cell, representing a 
+    position on a 96 well plate."""
+
+    plate = pd.read_excel(path, sheet_name=sheet_name, skiprows=3,
+                          nrows=8, usecols='A:M', header=0, index_col=0)
+
+    plate_dict = plate.T.to_dict(orient='dict')
+
+    # flatten nested dict
+    flat_plate_dict = flatten_dict(plate_dict)
+
+    # remove nan values
+    clean_dict = OrderedDict({key: value for key, value in flat_plate_dict.items(
+    ) if not isnan(flat_plate_dict[key])})
+
+    return clean_dict
+
+
+def flatten_dict(nested_dict: Dict[str, Dict]) -> dict:
+    """Flattens nested dict. Concatenates inner and outer keys."""
+
+    flat_dict = OrderedDict()
+    for outer_k, outer_v in nested_dict.items():
+        for inner_k, inner_v in outer_v.items():
+            flat_dict.update({outer_k.strip()+str(inner_k): inner_v})
+
+    return flat_dict
+
+
+def read_96well_template(path: str, enzmldoc):
+
+    general_info = pd.read_excel(
+        path, sheet_name="General Information", skiprows=1)
+
+    params = dict(
+        name=general_info.iloc[0, 1],
+        created=str(general_info.iloc[1, 1]),
+        doi=None,
+        pubmedid=general_info.iloc[3, 1],
+        url=general_info.iloc[4, 1],
+    )
+
+    enzmldoc = enzmldoc(**params)
+
+    # # User information
+    user_infos = pd.read_excel(
+        path, sheet_name="General Information", skiprows=9, nrows=8).dropna()
+
+    for record in user_infos.to_dict(orient="records"):
+        enzmldoc.addCreator(
+            Creator(
+                family_name=record["Family Name"],
+                given_name=record["Given Name"],
+                mail=record["Mail"],
+            )
+        )
+
+    # Vessel (96 well plate)
+    vessel_info = pd.read_excel(
+        path, sheet_name="General Information", skiprows=18, nrows=2).dropna()
+
+    vessel_info = vessel_info.to_dict(orient="records")[0]
+
+    vessel_id = enzmldoc.addVessel(
+        Vessel(
+            id=vessel_info["ID"],
+            name=vessel_info["Name"],
+            volume=vessel_info["Volume value"],
+            unit=vessel_info["Volume unit"]
+        )
+    )
+    vessel = {"vessel_id": vessel_id}
+
+    # Proteins
+    proteins = pd.read_excel(path, sheet_name="Proteins", skiprows=2)
+    instances = get_instances(proteins, Protein, enzmldoc)
+
+    for instance in instances:
+        enzmldoc.addProtein(Protein(**instance | vessel))
+
+    # Reactants
+    reactants = pd.read_excel(
+        path, sheet_name="Chemicals", skiprows=2, usecols="A:E")
+    instances = get_instances(reactants, Reactant, enzmldoc)
+
+    for instance in instances:
+        enzmldoc.addReactant(Reactant(**instance | vessel))
+
+    # Reactions
+    reactions = pd.read_excel(
+        path, sheet_name="Reactions", skiprows=2, usecols="A:J")
+
+    # Merge proteins and modifiers
+    nu_mods = [
+        merge_protein_modifier(protein, modifier)
+        for modifier, protein in zip(
+            reactions.Modifiers.values.tolist(), reactions.Proteins.values.tolist()
+        )
+    ]
+
+    # Replace merged modifiers with modifier tag
+    reactions.Modifiers = nu_mods
+
+    instances = get_instances(reactions, EnzymeReaction, enzmldoc)
+
+    for instance in instances:
+
+        # Get Educts, Products and Modifiers to add to the reaction
+        educts = parse_reaction_element(instance.get("educts"))
+        products = parse_reaction_element(instance.get("products"))
+        modifiers = parse_reaction_element(instance.get("modifiers"))
+
+        instance.pop("educts")
+        instance.pop("products")
+        instance.pop("modifiers")
+
+        # Instantiate Reaction
+        reaction = EnzymeReaction(**instance)
+
+        add_instances(reaction.addModifier, modifiers, enzmldoc)
+        add_instances(reaction.addEduct, educts, enzmldoc)
+        add_instances(reaction.addProduct, products, enzmldoc)
+
+        enzmldoc.addReaction(reaction)
+
+    # Set initial conditions of measurements
+    validate_inital_concentrations(path, enzmldoc.reactant_dict)
+
+    enzmldoc = generate_measurements(path, enzmldoc)
+
+    for measurement in enzmldoc.measurement_dict.values():
+
+        for reactant_id in enzmldoc.reactant_dict:
+            reactant_name = enzmldoc.getReactant(reactant_id).name
+            unit = get_species_unit(path, reactant_name)
+            for well_id, concentration in extract_initial_conditions(
+                    path, reactant_name).items():
+
+                if well_id == measurement.name:
+                    measurement.addData(
+                        init_conc=concentration,
+                        unit=unit,
+                        reactant_id=reactant_id
+                    )
+
+    return enzmldoc
+
+
+def get_species_unit(path: str, sheet_name: str) -> str:
+    """Extracts the unit of the reactant / protein from the template."""
+
+    unit = pd.read_excel(path, sheet_name=sheet_name,
+                         skiprows=2, nrows=0, usecols="D")
+    return unit.columns[0]
+
+
+def generate_measurements(path: str, enzmldoc):
+    reactant_name = next(iter(enzmldoc.reactant_dict.values())).name
+
+    well_positions = extract_initial_conditions(path, reactant_name).keys()
+    for well in well_positions:
+        enzmldoc.addMeasurement(Measurement(name=well))
+
+    return enzmldoc
 
 
 def read_template(path: str, enzmldoc):
@@ -30,7 +220,8 @@ def read_template(path: str, enzmldoc):
         EnzymeMLDocument: The resulting EnzymeML document.
     """
 
-    general_info = pd.read_excel(path, sheet_name="General Information", skiprows=1)
+    general_info = pd.read_excel(
+        path, sheet_name="General Information", skiprows=1)
 
     params = dict(
         name=general_info.iloc[0, 1],
@@ -180,7 +371,8 @@ def read_template(path: str, enzmldoc):
 
                 if type_mapping[row["Type"]] is DataTypes.CONVERSION:
                     # Convert percent to rational [0,1]
-                    row_values = list(map(lambda value: value / 100, row_values))
+                    row_values = list(
+                        map(lambda value: value / 100, row_values))
                     reactant_unit = "dimensionless"
                 elif type_mapping[row["Type"]] is DataTypes.PEAK_AREA:
                     # Add dimensionless unit
@@ -294,7 +486,8 @@ def merge_protein_modifier(protein, modifier):
     entities = proteins + modifier
 
     return ",".join(
-        [entity.replace("'", "").strip() for entity in entities if entity != "nan"]
+        [entity.replace("'", "").strip()
+         for entity in entities if entity != "nan"]
     )
 
 
