@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import re
 
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Tuple
 from math import isnan
 from collections import OrderedDict
 
@@ -22,25 +22,29 @@ from pyenzyme.enzymeml.core.measurement import Measurement
 from pyenzyme.enzymeml.core.replicate import Replicate
 
 
-def validate_inital_concentrations(path: str, enzymeml_reactant_dict: dict):
+def validate_plate_homogeneity(path: str, enzmldoc):
 
-    inital_conditions = []
-    reactant_names = []
-    for reactant_id in enzymeml_reactant_dict:
-        reactant_name = enzymeml_reactant_dict[reactant_id].name
-        reactant_names.append(reactant_name)
+    proteins = [protein.name for protein in enzmldoc.protein_dict.values()]
+    reactants = [reactant.name for reactant in enzmldoc.reactant_dict.values()]
 
-        initial_concentrations = extract_initial_conditions(
-            path, reactant_name)
-        inital_conditions.append(initial_concentrations)
+    species = proteins + reactants
 
-    unique_keys = [key for d in inital_conditions for key in d.keys()]
+    well_ids = []
+    species_well_ids = []
+    for spec in species:
+        spec_well_ids = extract_initial_conditions(path, spec).keys()
+        species_well_ids.append(spec_well_ids)
 
-    for initial_condition, reactant_name in zip(inital_conditions, reactant_names):
-        for unique_key in unique_keys:
-            if unique_key not in initial_condition.keys():
-                raise KeyError(
-                    f"Initial concentration for {unique_key} not found for reactant {reactant_name}")
+        well_ids = well_ids + list(spec_well_ids)
+
+    unique_well_ids = set(well_ids)
+
+    for spec, spec_well_ids in zip(species, species_well_ids):
+        if set(spec_well_ids) != unique_well_ids:
+            raise ValueError(
+                f"Initial concentration for plate postion(s)"
+                f"{list(set(spec_well_ids) ^ set(unique_well_ids))} of {spec} not specified."
+            )
 
 
 def extract_initial_conditions(path: str, sheet_name: str) -> OrderedDict[str, float]:
@@ -170,26 +174,83 @@ def read_96well_template(path: str, enzmldoc):
         enzmldoc.addReaction(reaction)
 
     # Set initial conditions of measurements
-    validate_inital_concentrations(path, enzmldoc.reactant_dict)
 
     enzmldoc = generate_measurements(path, enzmldoc)
 
     for measurement in enzmldoc.measurement_dict.values():
 
+        # get initial concentrations of reactants
         for reactant_id in enzmldoc.reactant_dict:
             reactant_name = enzmldoc.getReactant(reactant_id).name
             unit = get_species_unit(path, reactant_name)
-            for well_id, concentration in extract_initial_conditions(
-                    path, reactant_name).items():
+            init_concs = extract_initial_conditions(
+                path, reactant_name)
 
-                if well_id == measurement.name:
-                    measurement.addData(
-                        init_conc=concentration,
-                        unit=unit,
-                        reactant_id=reactant_id
-                    )
+            measurement.addData(
+                init_conc=init_concs[measurement.name],
+                unit=unit,
+                reactant_id=reactant_id
+            )
 
+        # get initial concentrations of proteins
+        for protein_id in enzmldoc.protein_dict:
+            protein_name = enzmldoc.getProtein(protein_id).name
+            unit = get_species_unit(path, protein_name)
+            init_concs = extract_initial_conditions(
+                path, protein_name)
+
+            measurement.addData(
+                init_conc=init_concs[measurement.name],
+                unit=unit,
+                protein_id=protein_id
+            )
+
+    # Add measurement data
+    type_mapping = {
+        "Concentration": DataTypes.CONCENTRATION,
+        "Absorption": DataTypes.ABSORPTION,
+        "Conversion [%]": DataTypes.CONVERSION,
+        "Peak Area": DataTypes.PEAK_AREA,
+        "Total concentration after addition": DataTypes.CONCENTRATION,
+    }
+
+    data_info = pd.read_excel(path, skiprows=2, sheet_name="Data", nrows=0)
+    measured_reactant = data_info.columns[2]
+    data_type = data_info.columns[5]
+    time_unit = data_info.columns[8]
+
+    measured_reactant_id = [reactant.id for reactant in enzmldoc.reactant_dict.values(
+    ) if reactant.name == measured_reactant][0]
+
+    measured_data = pd.read_excel(path, skiprows=3, sheet_name="Data")
+    time = measured_data.pop("Time").values.tolist()
+    data_dict = measured_data.to_dict(orient="list")
+
+    for measurement in enzmldoc.measurement_dict.values():
+
+        measurement.addReplicates(
+            Replicate(
+                id=measurement.name,
+                species_id=measured_reactant_id,
+                time_unit=time_unit,
+                time=time,
+                data=data_dict[measurement.name],
+                is_calculated=False,
+                data_type=type_mapping[data_type],
+                data_unit="dimensionless"
+            ),
+            enzmldoc
+        )
     return enzmldoc
+
+
+def get_timecourse_data(path: str) -> Tuple[List[float], Dict[str, List[float]]]:
+
+    df = pd.read_excel(path, skiprows=3, sheet_name="Data")
+    time = df.pop("Time").values.tolist()
+    data_dict = df.to_dict(orient="list")
+
+    return time, data_dict
 
 
 def get_species_unit(path: str, sheet_name: str) -> str:
