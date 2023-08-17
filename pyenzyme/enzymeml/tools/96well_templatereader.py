@@ -18,6 +18,7 @@ from pyenzyme.enzymeml.tools.templatereader import get_instances, add_instances,
 
 
 def read_96well_template(path: str, enzmldoc):
+    """Parser for 96 well plate template. Creates an EnzymeML document"""
 
     general_info = pd.read_excel(
         path, sheet_name="General Information", skiprows=1)
