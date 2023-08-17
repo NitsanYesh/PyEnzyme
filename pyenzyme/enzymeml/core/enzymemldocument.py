@@ -36,6 +36,7 @@ from pyenzyme.enzymeml.models.kineticmodel import KineticParameter
 from pyenzyme.enzymeml.tools.unitcreator import UnitCreator
 from pyenzyme.enzymeml.tools.enzymemlwriter import EnzymeMLWriter
 from pyenzyme.enzymeml.tools.templatereader import read_template
+from pyenzyme.enzymeml.tools.templatereader_96well import read_96well_template
 from pyenzyme.enzymeml.tools.validator import EnzymeMLValidator
 
 from pyenzyme.enzymeml.core.ontology import EnzymeMLPart, SBOTerm
@@ -164,7 +165,7 @@ class EnzymeMLDocument(EnzymeMLBase):
     def start_logger(cls, logs: str, values: dict):
         """Starts a logger instance for the document"""
 
-        # Initialite the log stream
+        # Initialize the log stream
         log_stream = StringIO()
         log_stream.write(logs)
 
@@ -195,8 +196,13 @@ class EnzymeMLDocument(EnzymeMLBase):
         Returns:
             EnzymeMLDocument: Resulting EnzymeML document.
         """
+        template_type = pd.read_excel(
+            path, sheet_name="General Information").columns[0].strip()
+        if "96well" in template_type:
+            return read_96well_template(path, cls)
 
-        return read_template(path, cls)
+        else:
+            return read_template(path, cls)
 
     @staticmethod
     def fromFile(path: str):
@@ -288,7 +294,8 @@ class EnzymeMLDocument(EnzymeMLBase):
                 reactant_id=measurement_data.reactant_id,
             )
 
-            nu_measurement.addReplicates(measurement_data.replicates, enzmldoc=enzmldoc)
+            nu_measurement.addReplicates(
+                measurement_data.replicates, enzmldoc=enzmldoc)
 
     def toFile(self, path: str, name: Optional[str] = None):
         """Saves an EnzymeML document to an OMEX container at the specified path
@@ -315,7 +322,7 @@ class EnzymeMLDocument(EnzymeMLBase):
         """Uploads an EnzymeML document to a Dataverse installation of choice.
 
         It should be noted, that the environment variables 'DATAVERSE_URL' and 'DATAVERSE_API_TOKEN'
-        should be given approriately before the upload. If not, tje upload cant be done.
+        should be given appropriately before the upload. If not, tje upload cant be done.
 
         Args:
             dataverse_name (str): Name of the dataverse to upload the EnzymeML document. You can find the name in the link of your dataverse (e.g. https://dataverse.installation/dataverse/{dataverseName})
@@ -360,14 +367,14 @@ class EnzymeMLDocument(EnzymeMLBase):
 
         Args:
             measurement_ids (List[str], optional): List of measurements that should be plotted or all. Defaults to ["all"].
-            interactive (bool, optional): [description]. Whether to return an interatcive or static plot. Defaults to to False.
+            interactive (bool, optional): [description]. Whether to return an interactive or static plot. Defaults to to False.
             use_names (bool, optional): Whether names or IDs should be used. Defaults to False.
             sharey (bool, optional): Whether all plots in FacetGrid should share the y-axis. Defaults to True.
             col_wrap (int, optional): Specifies in FacetGrid at which number of cols to create a new row. Defaults to 4.
             trendline (bool, optional): Whether the plot should include a trendline. Defaults to False.
             width (int, optional): Interactive plot width. Defaults to 1000.
             height (int, optional): Interactive plot height. Defaults to 500.
-            hovermode (str, optional): Changes behaviour of hovering. Following options are available ['closest', 'x unified', 'x', 'y', 'y unified']. Defaults to 'closest'.
+            hovermode (str, optional): Changes behavior of hovering. Following options are available ['closest', 'x unified', 'x', 'y', 'y unified']. Defaults to 'closest'.
 
         Returns:
             [type]: [description]
@@ -380,7 +387,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         if interactive:
             kwargs["template"] = "plotly_white"
 
-        df = self.toDataFrame(use_names=use_names, measurement_ids=measurement_ids)
+        df = self.toDataFrame(use_names=use_names,
+                              measurement_ids=measurement_ids)
 
         if interactive:
             return self._create_interactive_plot(
@@ -447,7 +455,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         """
 
         if trendline:
-            kwargs.update({"trendline": "lowess", "trendline_options": {"frac": 0.5}})
+            kwargs.update(
+                {"trendline": "lowess", "trendline_options": {"frac": 0.5}})
 
         fig = px.scatter(
             df,
@@ -463,7 +472,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         )
 
         fig.update_layout(
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            legend=dict(orientation="h", yanchor="bottom",
+                        y=1.02, xanchor="right", x=1)
         )
 
         fig.update_layout(hovermode=hovermode)
@@ -514,13 +524,13 @@ class EnzymeMLDocument(EnzymeMLBase):
             # Reset columns
             exp_data.columns = columns
 
-            # Reduce DataFrame to three columns to hue indicidual species
+            # Reduce DataFrame to three columns to hue individual species
             exp_data = pd.melt(exp_data, id_vars=["time"], var_name="species")
             exp_data["measurement"] = [measurement_id] * exp_data.shape[0]
 
             df_plot.append(exp_data)
 
-        # Finally, concatenate all indivdidual datasets
+        # Finally, concatenate all individual datasets
         df_plot = pd.concat(df_plot)
 
         return df_plot
@@ -558,7 +568,7 @@ class EnzymeMLDocument(EnzymeMLBase):
             species_ids (Union[str, List[str]], optional): The species from which to export the data. Defaults to "all".
 
         Returns:
-            Dict[str, Dict[str, Union[tuple, pd.DataFrame]]]: The data corresponding to the specified options. The dictionary will still distinguish between meassuremnts.
+            Dict[str, Dict[str, Union[tuple, pd.DataFrame]]]: The data corresponding to the specified options. The dictionary will still distinguish between measurements.
         """
 
         if proteins is False and reactants is False:
@@ -627,7 +637,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         ]
 
         # Create param report
-        param_report = pd.DataFrame(params).set_index("reaction", inplace=False)
+        param_report = pd.DataFrame(params).set_index(
+            "reaction", inplace=False)
 
         if exclude_constant:
             return param_report[param_report.constant == False]
@@ -648,7 +659,8 @@ class EnzymeMLDocument(EnzymeMLBase):
 
         if dictionary.keys():
             # fetch all keys and sort them
-            number = int(max(list(dictionary.keys()), key=lambda id: int(id[1::]))[1::])
+            number = int(max(list(dictionary.keys()),
+                         key=lambda id: int(id[1::]))[1::])
             return prefix + str(number + 1)
 
         return prefix + str(0)
@@ -682,13 +694,13 @@ class EnzymeMLDocument(EnzymeMLBase):
 
         This can also be set to 'strict', where any species, measurement,
         replicate and parameter has to comply in a global fashion.
-        To summarise, strict mode checks on:
+        To summarize, strict mode checks on:
 
             - Consistent usage of time
             - Consistent concentration units for ALL concentrations
             - Consistent volumetric unit including vessels
 
-        Strict mode is of greates importance for kinetic modeling, differing scales
+        Strict mode is of great importance for kinetic modeling, differing scales
         can lead to wrong results. However, the code will still run and only warnings
         will be given.
 
@@ -701,7 +713,8 @@ class EnzymeMLDocument(EnzymeMLBase):
             Bool: Whether the document is consistent in units
         """
 
-        is_consistent, report = EnzymeMLValidator.check_unit_consistency(self, strict)
+        is_consistent, report = EnzymeMLValidator.check_unit_consistency(
+            self, strict)
 
         if return_report:
             return is_consistent, report
@@ -726,9 +739,10 @@ class EnzymeMLDocument(EnzymeMLBase):
         fin_string: List[str]
 
         def generate_lines(dictionary: dict) -> None:
-            """Breaks up a dictionary and generates a human readible line."""
+            """Breaks up a dictionary and generates a human readable line."""
             for element_id, element in dictionary.items():
-                fin_string.append(f"\tID: {element_id} \t Name: {element.name}")
+                fin_string.append(
+                    f"\tID: {element_id} \t Name: {element.name}")
 
         fin_string = [self.name]
 
@@ -773,7 +787,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         """Prints all reaction equations to inspect the content"""
 
         if len(self.reaction_dict) == 0:
-            print(">> No reactions present in this EnzymeML Document.", file=sys.stderr)
+            print(">> No reactions present in this EnzymeML Document.",
+                  file=sys.stderr)
             return
 
         output = []
@@ -781,7 +796,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         for reaction in self.reaction_dict.values():
 
             # Get the equation
-            equation = reaction.get_reaction_scheme(by_name=by_name, enzmldoc=self)
+            equation = reaction.get_reaction_scheme(
+                by_name=by_name, enzmldoc=self)
 
             if self.in_ipynb():
                 output.append(
@@ -853,7 +869,8 @@ class EnzymeMLDocument(EnzymeMLBase):
                 init_values[reaction.id] = parameters
 
         # Finally, write the template to YAML
-        out = os.path.join(dir, self.name.replace(" ", "_") + "_init_values.yaml")
+        out = os.path.join(dir, self.name.replace(
+            " ", "_") + "_init_values.yaml")
 
         with open(out, "w") as file_handle:
             yaml.dump(
@@ -889,7 +906,8 @@ class EnzymeMLDocument(EnzymeMLBase):
                     )
                     self.global_parameters[name].upper = options.get("upper")
                     self.global_parameters[name].lower = options.get("lower")
-                    self.global_parameters[name].constant = options.get("constant")
+                    self.global_parameters[name].constant = options.get(
+                        "constant")
 
             else:
                 # Get the reaction
@@ -1063,7 +1081,8 @@ class EnzymeMLDocument(EnzymeMLBase):
     ):
 
         # First convert all participants given as name to IDs
-        participants = [self.getAny(participant).id for participant in participants]
+        participants = [self.getAny(
+            participant).id for participant in participants]
 
         return self._add_complex(
             Complex(
@@ -1163,7 +1182,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         elif reaction.temperature:
             # Set the temperature unit to the actual string
             reaction._temperature_unit_id = reaction.temperature_unit
-            reaction.temperature_unit = self.getUnitString(reaction.temperature_unit)
+            reaction.temperature_unit = self.getUnitString(
+                reaction.temperature_unit)
 
         # Set model units and check for consistency
         if reaction.model:
@@ -1174,7 +1194,8 @@ class EnzymeMLDocument(EnzymeMLBase):
             self._reference_global_parameters(model=reaction.model)
 
             # Unit conversion
-            self._convert_kinetic_model_units(reaction.model.parameters, enzmldoc=self)
+            self._convert_kinetic_model_units(
+                reaction.model.parameters, enzmldoc=self)
 
         # Finally add the reaction to the document and assign the doc
         reaction._enzmldoc = self
@@ -1195,7 +1216,7 @@ class EnzymeMLDocument(EnzymeMLBase):
             equation (str): The rate law given in the KineticModel
         """
 
-        # Get all the params of the model to distinguis params from names
+        # Get all the params of the model to distinguish params from names
         all_params = [param.name for param in model.parameters]
 
         for node in ast.walk(ast.parse(model.equation)):
@@ -1302,7 +1323,8 @@ class EnzymeMLDocument(EnzymeMLBase):
             # Open file handle
             file_handle = open(filepath, "rb")
         elif filepath is None and file_handle is None:
-            raise ValueError("Please specify either a file path or a file handle")
+            raise ValueError(
+                "Please specify either a file path or a file handle")
 
         # Finally, add the file and close the handler
         self.file_dict[file_id] = {
@@ -1326,7 +1348,7 @@ class EnzymeMLDocument(EnzymeMLBase):
 
         # Assign the current EnzymeMLDocument to
         # propagate towards sub-elements such
-        # that unit changes can be done comliant
+        # that unit changes can be done compliant
         # to UnitDefinitions
         measurement._enzmldoc = self
 
@@ -1337,7 +1359,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         self._convertMeasurementUnits(measurement)
 
         # Generate the ID and add it to the dictionary
-        measurement.id = self._generateID(prefix="m", dictionary=self.measurement_dict)
+        measurement.id = self._generateID(
+            prefix="m", dictionary=self.measurement_dict)
 
         # Update measurement ID to all replicates
         protein_data = measurement.species_dict["proteins"]
@@ -1452,7 +1475,7 @@ class EnzymeMLDocument(EnzymeMLBase):
         """Checks if the used species in the measurement are consistent with the EnzymeML document.
 
         Args:
-            measurement (MeasurementData): Objech holding measurement data for a species.
+            measurement (MeasurementData): Object holding measurement data for a species.
         """
 
         map(self._checkSpecies, measurement.species_dict["reactants"])
@@ -1468,7 +1491,8 @@ class EnzymeMLDocument(EnzymeMLBase):
             SpeciesNotFoundError: Raised when a species is not defined in the EnzymeML document.
         """
 
-        all_species = {**self.reactant_dict, **self.protein_dict, **self.complex_dict}
+        all_species = {**self.reactant_dict, **
+                       self.protein_dict, **self.complex_dict}
 
         if species_id not in all_species.keys():
 
@@ -1530,7 +1554,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         try:
             return self._unit_dict[unit_id].name
         except KeyError:
-            raise SpeciesNotFoundError(species_id=unit_id, enzymeml_part="Units")
+            raise SpeciesNotFoundError(
+                species_id=unit_id, enzymeml_part="Units")
 
     def getUnitDef(self, id: str) -> UnitDef:
         """Returns the unit associated with the given ID.
@@ -1663,7 +1688,8 @@ class EnzymeMLDocument(EnzymeMLBase):
             return self.file_dict[id]
         else:
             return next(
-                filter(lambda file: file["name"] == id, self.file_dict.values())
+                filter(lambda file: file["name"] ==
+                       id, self.file_dict.values())
             )
 
     def getAny(self, id: str) -> AbstractSpecies:
@@ -1715,7 +1741,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         """
 
         for attr in ["id", "name"]:
-            species = self._search_object(value=id, attr=attr, dictionary=dictionary)
+            species = self._search_object(
+                value=id, attr=attr, dictionary=dictionary)
 
             if species:
                 return species
@@ -1737,7 +1764,8 @@ class EnzymeMLDocument(EnzymeMLBase):
         try:
             # Filter the dict for the desired species
             return next(
-                filter(lambda obj: obj.__dict__[attr] == value, dictionary.values())
+                filter(lambda obj: obj.__dict__[
+                       attr] == value, dictionary.values())
             )
         except StopIteration:
             return None
@@ -1776,7 +1804,7 @@ class EnzymeMLDocument(EnzymeMLBase):
 
     @staticmethod
     def _getSpeciesList(dictionary: dict) -> list:
-        """Helper function to retrieve lists of dicitonary objects
+        """Helper function to retrieve lists of dictionary objects
 
         Args:
             dictionary (dict): Dictionary of corresponding elements
