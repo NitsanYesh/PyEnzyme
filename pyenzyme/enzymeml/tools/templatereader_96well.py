@@ -116,6 +116,7 @@ def read_96well_template(path: str, enzmldoc):
 
     # Set initial conditions of measurements
     enzmldoc = generate_measurements(path, enzmldoc)
+    ph_dict = extract_initial_conditions(path, "pH")
 
     for measurement in enzmldoc.measurement_dict.values():
 
@@ -126,6 +127,7 @@ def read_96well_template(path: str, enzmldoc):
             init_concs = extract_initial_conditions(
                 path, reactant_name)
 
+            measurement.ph = ph_dict[measurement.name]
             measurement.addData(
                 init_conc=init_concs[measurement.name],
                 unit=unit,
@@ -149,34 +151,44 @@ def read_96well_template(path: str, enzmldoc):
     type_mapping = {
         "Concentration": DataTypes.CONCENTRATION,
         "Absorption": DataTypes.ABSORPTION,
+        "Fluorescence": DataTypes.FLOURESCENCE,
+        "Luminescence": DataTypes.LUMINESCENCE,
         "Conversion [%]": DataTypes.CONVERSION,
         "Peak Area": DataTypes.PEAK_AREA,
         "Total concentration after addition": DataTypes.CONCENTRATION,
     }
 
-    data_info = pd.read_excel(path, skiprows=2, sheet_name="Data", nrows=0)
-    measured_reactant = data_info.columns[2]
-    data_type = data_info.columns[5]
-    time_unit = data_info.columns[8]
+    data_info = pd.read_excel(
+        path, skiprows=2, sheet_name="Data", nrows=1, usecols="A:E"
+    ).to_dict(orient="records")[0]
 
-    measured_reactant_id = [reactant.id for reactant in enzmldoc.reactant_dict.values(
-    ) if reactant.name == measured_reactant][0]
+    # Ensure that reactant is specified in the 'Chemicals' sheet
+    try:
+        measured_reactant_id = [reactant.id for reactant in enzmldoc.reactant_dict.values(
+        ) if reactant.name == data_info["Reactant"]][0]
+    except IndexError:
+        raise ValueError(
+            f"Reactant {data_info['Reactant']} not found in excel template sheet 'Chemicals'.")
 
-    measured_data = pd.read_excel(path, skiprows=3, sheet_name="Data")
-    time = measured_data.pop("Time").values.tolist()
-    data_dict = measured_data.to_dict(orient="list")
+    time, data_dict = get_timecourse_data(path)
 
     for measurement in enzmldoc.measurement_dict.values():
+
+        print(data_info)
+
+        # TODO: add termperature during creation of measurement, to enable unit conversion validator
+        measurement.temperature = data_info["Temperature"]
+        measurement.temperature_unit = data_info["Temperature unit"]
 
         measurement.addReplicates(
             Replicate(
                 id=measurement.name,
                 species_id=measured_reactant_id,
-                time_unit=time_unit,
+                time_unit=data_info["Time unit"],
                 time=time,
                 data=data_dict[measurement.name],
                 is_calculated=False,
-                data_type=type_mapping[data_type],
+                data_type=type_mapping[data_info["Data type"]],
                 data_unit="dimensionless"
             ),
             enzmldoc
@@ -242,7 +254,7 @@ def flatten_dict(nested_dict: Dict[str, Dict]) -> dict:
 
 def get_timecourse_data(path: str) -> Tuple[List[float], Dict[str, List[float]]]:
 
-    df = pd.read_excel(path, skiprows=3, sheet_name="Data")
+    df = pd.read_excel(path, skiprows=4, sheet_name="Data")
     time = df.pop("Time").values.tolist()
     data_dict = df.to_dict(orient="list")
 

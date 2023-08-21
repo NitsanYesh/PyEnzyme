@@ -367,7 +367,8 @@ class Measurement(EnzymeMLBase):
                 )
 
         for measurement_data in {**self.getProteins(), **self.getReactants()}.values():
-            measurement_data.unifyUnits(kind=kind, scale=scale, enzmldoc=enzmldoc)
+            measurement_data.unifyUnits(
+                kind=kind, scale=scale, enzmldoc=enzmldoc)
 
     def _has_replicates(self) -> bool:
         """Checks whether replicates are present in the measurement.

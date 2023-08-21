@@ -68,7 +68,8 @@ class MeasurementData(EnzymeMLBase):
             raise MeasurementDataSpeciesIdentifierError()
 
         elif reactant_id and protein_id:
-            raise MeasurementDataSpeciesIdentifierError(both=[reactant_id, protein_id])
+            raise MeasurementDataSpeciesIdentifierError(
+                both=[reactant_id, protein_id])
 
         return protein_id
 
@@ -106,7 +107,8 @@ class MeasurementData(EnzymeMLBase):
         """Calculates the new transformation value and returns new UnitDef"""
 
         # Calculate transformation value
-        transform_value = unitdef.calculateTransformValue(kind=kind, scale=scale)
+        transform_value = unitdef.calculateTransformValue(
+            kind=kind, scale=scale)
 
         # Create a new unit that matches the new scale
         new_unitdef = UnitDef(**unitdef.dict())
@@ -142,7 +144,8 @@ class MeasurementData(EnzymeMLBase):
         )
 
         # Re-scale and assign the new data of the replicate
-        replicate.data = [data_point * transform_value for data_point in replicate.data]
+        replicate.data = [data_point *
+                          transform_value for data_point in replicate.data]
         replicate._data_unit_id = unit_id
         replicate.data_unit = new_unit_name
 
