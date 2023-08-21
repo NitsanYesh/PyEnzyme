@@ -60,6 +60,8 @@ class DataTypes(str, Enum):
 
     CONCENTRATION = "conc"
     ABSORPTION = "abs"
+    LUMINESCENCE = "luminesecence"
+    FLOURESCENCE = "flourescence"
     FEED = "feed"
     BIOMASS = "biomass"
     CONVERSION = "conversion"
