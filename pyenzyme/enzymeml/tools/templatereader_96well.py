@@ -114,10 +114,21 @@ def read_96well_template(path: str, enzmldoc):
         enzmldoc.addReaction(reaction)
 
     # Set initial conditions of measurements
-    enzmldoc = generate_measurements(path, enzmldoc)
+    measurement_conditions = get_measurement_conditions(path)
+
+    enzmldoc = generate_measurements(
+        path=path,
+        enzmldoc=enzmldoc,
+        temperature=measurement_conditions["Temperature"],
+        temperature_unit=measurement_conditions["Temperature unit"],
+    )
+
     ph_dict = extract_initial_conditions(path, "pH")
 
     for measurement in enzmldoc.measurement_dict.values():
+
+        # Add pH
+        measurement.ph = ph_dict[measurement.name]
 
         # get initial concentrations of reactants
         for reactant_id in enzmldoc.reactant_dict:
@@ -126,7 +137,6 @@ def read_96well_template(path: str, enzmldoc):
             init_concs = extract_initial_conditions(
                 path, reactant_name)
 
-            measurement.ph = ph_dict[measurement.name]
             measurement.addData(
                 init_conc=init_concs[measurement.name],
                 unit=unit,
@@ -157,35 +167,27 @@ def read_96well_template(path: str, enzmldoc):
         "Total concentration after addition": DataTypes.CONCENTRATION,
     }
 
-    data_info = pd.read_excel(
-        path, skiprows=2, sheet_name="Data", nrows=1, usecols="A:E"
-    ).to_dict(orient="records")[0]
-
     # Ensure that reactant is specified in the 'Chemicals' sheet
     try:
         measured_reactant_id = [reactant.id for reactant in enzmldoc.reactant_dict.values(
-        ) if reactant.name == data_info["Reactant"]][0]
+        ) if reactant.name == measurement_conditions["Reactant"]][0]
     except IndexError:
         raise ValueError(
-            f"Reactant {data_info['Reactant']} not found in excel template sheet 'Chemicals'.")
+            f"Reactant {measurement_conditions['Reactant']} not found in excel template sheet 'Chemicals'.")
 
     time, data_dict = get_timecourse_data(path)
 
     for measurement in enzmldoc.measurement_dict.values():
 
-        # TODO: add termperature during creation of measurement, to enable unit conversion validator
-        measurement.temperature = data_info["Temperature"]
-        measurement.temperature_unit = data_info["Temperature unit"]
-
         measurement.addReplicates(
             Replicate(
                 id=measurement.name,
                 species_id=measured_reactant_id,
-                time_unit=data_info["Time unit"],
+                time_unit=measurement_conditions["Time unit"],
                 time=time,
                 data=data_dict[measurement.name],
                 is_calculated=False,
-                data_type=type_mapping[data_info["Data type"]],
+                data_type=type_mapping[measurement_conditions["Data type"]],
                 data_unit="dimensionless"
             ),
             enzmldoc
@@ -266,7 +268,12 @@ def get_species_unit(path: str, sheet_name: str) -> str:
     return unit.columns[0]
 
 
-def generate_measurements(path: str, enzmldoc):
+def generate_measurements(
+    path: str,
+    enzmldoc,
+    temperature: float,
+    temperature_unit: str
+):
     """Generates a measurement for each well position in the template."""
 
     validate_plate_layout_homogeneity(path, enzmldoc)
@@ -275,6 +282,19 @@ def generate_measurements(path: str, enzmldoc):
 
     well_positions = extract_initial_conditions(path, reactant_name).keys()
     for well in well_positions:
-        enzmldoc.addMeasurement(Measurement(name=well))
+        enzmldoc.addMeasurement(
+            Measurement(
+                name=well,
+                temperature=temperature,
+                temperature_unit=temperature_unit,
+            )
+        )
 
     return enzmldoc
+
+
+def get_measurement_conditions(path: str) -> Dict[str, Any]:
+
+    return pd.read_excel(
+        path, skiprows=2, sheet_name="Data", nrows=1, usecols="A:E"
+    ).to_dict(orient="records")[0]

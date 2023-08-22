@@ -253,6 +253,7 @@ def extract_values(sheet: pd.DataFrame, mapping: Dict[str, str]) -> list:
 
 
 def clean_instance(instance: dict, enzmldoc) -> dict:
+
     def get_vessel_name(name: str, enzmldoc):
         return enzmldoc.getVessel(name).id
 
@@ -275,7 +276,7 @@ def clean_instance(instance: dict, enzmldoc) -> dict:
         if repr(uniprotid) == "nan":
             return None
         else:
-            uniprotid
+            return uniprotid
 
     mapping = {
         "vessel_id": get_vessel_name,
@@ -288,7 +289,6 @@ def clean_instance(instance: dict, enzmldoc) -> dict:
     for key, item in instance.items():
         if key in mapping:
             instance[key] = mapping[key](item, enzmldoc)
-
     return instance
 
 
