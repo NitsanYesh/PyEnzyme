@@ -65,7 +65,6 @@ def read_96well_template(path: str, enzmldoc):
     # Proteins
     proteins = pd.read_excel(path, sheet_name="Proteins", skiprows=2)
     instances = get_instances(proteins, Protein, enzmldoc)
-
     for instance in instances:
         enzmldoc.addProtein(Protein(**instance | vessel))
 
@@ -173,8 +172,6 @@ def read_96well_template(path: str, enzmldoc):
     time, data_dict = get_timecourse_data(path)
 
     for measurement in enzmldoc.measurement_dict.values():
-
-        print(data_info)
 
         # TODO: add termperature during creation of measurement, to enable unit conversion validator
         measurement.temperature = data_info["Temperature"]
