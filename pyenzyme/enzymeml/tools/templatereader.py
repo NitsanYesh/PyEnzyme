@@ -8,9 +8,7 @@ import numpy as np
 import pandas as pd
 import re
 
-from typing import Any, List, Dict, Tuple
-from math import isnan
-from collections import OrderedDict
+from typing import List, Dict
 
 from pyenzyme.enzymeml.core.ontology import DataTypes
 from pyenzyme.enzymeml.core.creator import Creator
